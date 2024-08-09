@@ -1,4 +1,3 @@
-// components/SignInModal.tsx
 'use client';
 
 import React, { useState } from 'react';

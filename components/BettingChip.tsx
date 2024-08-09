@@ -1,4 +1,3 @@
-// components/BettingChip.tsx
 import React from 'react';
 
 interface BettingChipProps {

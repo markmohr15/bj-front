@@ -50,7 +50,11 @@ export const PLAYER_ACTIONS = gql`
         insuranceResult
         split
         double
+        splitOffered
+        isBlackjack
+        isBust
         hand {
+          id
           currentSpotId
           dealerCards
         }
@@ -66,7 +70,6 @@ export const INSURE_SPOTS = gql`
       spots {
         id
         insurance
-        # Include other fields you need
       }
       errors
     }
@@ -106,6 +109,16 @@ export const DEALER_ACTIONS = gql`
           insuranceResult
           profit
           result
+        }
+        shoe {
+          discardedCards
+          shuffle
+        }
+        session {
+          shoeCount
+          profit
+          handCount
+          spotCount
         }
       }
       errors

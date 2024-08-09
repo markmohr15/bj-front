@@ -17,9 +17,7 @@ const Card: React.FC<CardProps> = ({ value, suit, hidden = false }) => {
 
   if (hidden) {
     return (
-      <div className="w-16 h-24 bg-red-600 rounded-lg shadow-md border border-gray-300">
-        {/* Card back is just a solid red color */}
-      </div>
+      <div className="w-16 h-24 bg-red-600 rounded-lg shadow-md border border-gray-300"></div>
     );
   }
 

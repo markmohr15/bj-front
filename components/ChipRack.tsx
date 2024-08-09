@@ -1,4 +1,3 @@
-// components/ChipRack.tsx
 import React from 'react';
 import { Chip } from '../types/Chip';
 import { useSelector, useDispatch } from 'react-redux';

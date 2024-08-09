@@ -18,7 +18,6 @@ const Menu: React.FC<MenuProps> = ({ isLoggedIn, onSignInClick, onSignUpClick, o
       <div className="container mx-auto flex justify-between items-center">
         <Link href="/" className="text-2xl font-bold">BJ AI</Link>
         
-        {/* Mobile menu button */}
         <button 
           className="md:hidden"
           onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -28,7 +27,6 @@ const Menu: React.FC<MenuProps> = ({ isLoggedIn, onSignInClick, onSignUpClick, o
           </svg>
         </button>
 
-        {/* Desktop menu */}
         <div className="hidden md:flex space-x-4">
           {isLoggedIn ? (
             <>
@@ -44,7 +42,6 @@ const Menu: React.FC<MenuProps> = ({ isLoggedIn, onSignInClick, onSignUpClick, o
         </div>
       </div>
 
-      {/* Mobile menu */}
       {isMenuOpen && (
         <div className="md:hidden absolute top-full left-0 right-0 bg-green-900 p-4">
           {isLoggedIn ? (

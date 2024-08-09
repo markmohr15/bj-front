@@ -1,4 +1,3 @@
-// types/Spot.ts
 export interface Spot {
   id: number | null;
   sessionId: number;
@@ -12,6 +11,9 @@ export interface Spot {
   split: boolean;
   double: boolean;
   active: boolean;
+  isBlackjack: boolean;
+  isBust: boolean;
+  splitOffered: boolean;
 }
 
 export interface SpotProps {

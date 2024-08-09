@@ -1,4 +1,3 @@
-// components/DiscardTray.tsx
 import React from 'react';
 
 interface DiscardTrayProps {
@@ -15,18 +14,15 @@ const DiscardTray: React.FC<DiscardTrayProps> = ({ totalDecks, discardedPercenta
 
   return (
     <div className="relative" style={{ width: `${width}px`, height: `${height}px` }}>
-      {/* Tray body */}
       <div className="absolute inset-0 bg-gray-800 rounded-sm overflow-hidden">
-        {/* Discarded cards */}
         {discardedPercentage > 0 && (
           <div 
             className="absolute left-0 right-0 bg-gradient-to-b from-white to-gray-200 transition-all duration-300 ease-in-out"
             style={{ 
               height: `${fillHeight}px`, 
-              bottom: `${baseHeight}px`  // Position above the base
+              bottom: `${baseHeight}px`
             }}
           >
-            {/* Card edges */}
             <div className="absolute inset-0 overflow-hidden">
               {[...Array(Math.ceil(fillHeight / 2))].map((_, index) => (
                 <div 
@@ -38,14 +34,10 @@ const DiscardTray: React.FC<DiscardTrayProps> = ({ totalDecks, discardedPercenta
           </div>
         )}
         
-        {/* Tray bottom */}
         <div className="absolute bottom-0 left-0 right-0 h-1/6 bg-gray-900"></div>
       </div>
       
-      {/* Tray front */}
-      <div className="absolute bottom-0 left-0 right-0 h-1/6 bg-gray-700 rounded-b-sm"></div>
-      
-      {/* Reflective top edge */}
+      <div className="absolute bottom-0 left-0 right-0 h-1/6 bg-gray-700 rounded-b-sm"></div>      
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-b from-white to-transparent opacity-50"></div>
     </div>
   );

@@ -52,9 +52,9 @@ const SessionList: React.FC<SessionListProps> = ({ sessions }) => {
               <td className="px-6 py-4 text-black">
                 {getSessionStatus(session)}
               </td>
-              <td className="px-6 py-4 text-black">{session.handsPlayed}</td>
-              <td className={`px-6 py-4 ${session.profitCents >= 0 ? 'text-black' : 'text-red-500'}`}>
-                {formatMoney(session.profitCents, { showSign: true })}
+              <td className="px-6 py-4 text-black">{session.handCount}</td>
+              <td className={`px-6 py-4 ${session.profit >= 0 ? 'text-black' : 'text-red-500'}`}>
+                ${session.profit}
               </td>
             </tr>
           ))}

@@ -1,17 +1,28 @@
 import React from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { RootState } from '../lib/store';
-import { insureAllSpots, checkAndTriggerIntermediateActions,
-         updateGroupInsurance } from '../lib/slices/blackjackSlice';
+import { insureAllSpots, checkAndTriggerIntermediateActions, checkAndTriggerDealerActions,
+         updateGroupInsurance, clearTable } from '../lib/slices/blackjackSlice';
+import { conditionalActionWithDelay } from '../lib/store';
 
 const GroupInsurance: React.FC<InsuranceProps> = ({ onComplete }) => {
   const dispatch = useDispatch();
 
-  const handleInsurance = (insure: boolean) => {
-    dispatch(insureAllSpots(insure)).then(() => {
-      dispatch(checkAndTriggerIntermediateActions());
-    });
-  }
+  const handleInsurance = async (insure: boolean) => {
+    try {
+      await dispatch(insureAllSpots(insure));
+      await dispatch(checkAndTriggerIntermediateActions());
+      
+      await dispatch(conditionalActionWithDelay(
+        () => checkAndTriggerDealerActions(),
+        () => clearTable(),
+        (state) => !state.blackjack.hand?.currentSpotId,
+        5000
+      ));
+    } catch (error) {
+      console.error('Error in GroupInsurance handleInsurance:', error);
+    }
+  };
 
   const handleInsureIndividually = () => {
     dispatch(updateGroupInsurance());

@@ -1,7 +1,7 @@
-// src/store/blackjackSlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { client } from '../apolloClient';
 import { Spot } from '../../types/Spot';
+import { Hand } from '../../types/Hand';
 import { Session } from '../../types/Session';
 import { DEAL_HAND, UPDATE_INSURANCE, PLAYER_ACTIONS, INSURE_SPOTS,
          INTERMEDIATE_ACTIONS, DEALER_ACTIONS } from '../mutations/blackjack';
@@ -9,15 +9,14 @@ import { DEAL_HAND, UPDATE_INSURANCE, PLAYER_ACTIONS, INSURE_SPOTS,
 interface BlackjackState {
   session: Session | null;
   spots: Spot[];
-  handId: number | null;
-  dealerCards: string[];
+  hand: Hand | null;
   isDealt: boolean;
   insuranceOffered: boolean;
   groupInsurance: boolean;
   betAllSpots: boolean;
-  currentSpotId: number | null;
   selectedChipValue: number | null;
   discardedCards: number;
+  shuffling: boolean;
   loading: boolean;
   error: string | null;
 }
@@ -25,15 +24,14 @@ interface BlackjackState {
 const initialState: BlackjackState = {
   session: null,
   spots: [],
-  handId: null,
-  dealerCards: [],
+  hand: null,
   isDealt: false,
   insuranceOffered: false,
   groupInsurance: true,
   betAllSpots: false,
-  currentSpotId: null,
   selectedChipValue: null,
   discardedCards: 0,
+  shuffling: false,
   loading: false,
   error: null,
 };
@@ -72,13 +70,11 @@ export const updateSpotInsurance = createAsyncThunk(
   'blackjack/updateSpotInsurance',
   async ({ spotId, insurance }: { spotId: number; insurance: boolean }, { dispatch, rejectWithValue }) => {
     try {
-      // Update local state
       dispatch(updateSpotById({ 
         id: spotId, 
         changes: { insurance: insurance } 
       }));
 
-      // Send update to backend
       const { data } = await client.mutate({
         mutation: UPDATE_INSURANCE,
         variables: { spotId, insurance },
@@ -144,7 +140,8 @@ export const checkAndTriggerIntermediateActions = createAsyncThunk(
   'blackjack/intermediateActions',
   async (_, { getState, rejectWithValue }) => {
     const state = getState() as RootState;
-    const { spots, handId } = state.blackjack;
+    const { spots, hand } = state.blackjack;
+    const handId = hand.id;
 
     const activeSpots = spots.filter(spot => spot.active === true);
     const allActiveSpotInsured = activeSpots.every(spot => spot.insurance !== null);
@@ -170,9 +167,10 @@ export const checkAndTriggerDealerActions = createAsyncThunk(
   'blackjack/dealerActions',
   async (_, { getState, rejectWithValue }) => {
     const state = getState() as RootState;
-    const { currentSpotId, handId } = state.blackjack;
+    const { hand } = state.blackjack;
+    const handId = hand.id;
 
-    if (currentSpotId) {
+    if (hand.currentSpotId) {
       return rejectWithValue('Not all spots have been played');
     }
 
@@ -209,6 +207,8 @@ const blackjackSlice = createSlice({
         profit: null,
         active: true,
       }));
+      state.shuffle = false;
+      state.hand = {id: null, dealerCards: [], currentSpotId: null};
     },
     updateSpotByNumber: (state, action: PayloadAction<{ spotNumber: number; changes: Partial<Spot> }>) => {
       const { spotNumber, changes } = action.payload;
@@ -240,17 +240,19 @@ const blackjackSlice = createSlice({
     },
     clearTable: (state) => {
       state.spots = state.spots.map(spot => ({ ...spot, id: null, wager: 0, playerCards: [], 
-                                              splitOffered: null, isBlackjack: null, 
-                                              insurance: null, double: null, result: null,
-                                              profit: null, active: true }));
-      state.handId = null;
-      state.dealerCards = [];
+                                              splitOffered: null, isBlackjack: null, isBust: null,
+                                              insurance: null, double: null, split: null, result: null,
+                                              profit: null, active: true, insuranceResult: null }));
+      state.hand = {id: null, dealerCards: [], currentSpotId: null};
       state.isDealt = false;
       state.insuranceOffered = false;
-      state.currentSpotId = null;
     },
-    updateDiscards: (state, action: PayloadAction<number>) => {
-      state.discardedCards += action.payload;
+    checkForBust: (state, action: PayloadAction<number>) => {
+      const spotIndex = state.spots.findIndex(spot => spot.id === action.payload);
+      if (spotIndex !== -1 && state.spots[spotIndex].isBust ) {
+        state.discardedCards += state.spots[spotIndex].playerCards.length;
+        state.spots[spotIndex].active = false;
+      }
     },
     updateSelectedChipValue: (state, action: PayloadAction<number>) => {
       state.selectedChipValue = action.payload;
@@ -260,6 +262,9 @@ const blackjackSlice = createSlice({
     },
     updateGroupInsurance: (state) => {
       state.groupInsurance = false;
+    },
+    clearShuffle: (state) => {
+      state.shuffle = false;
     },
   },
   extraReducers: (builder) => {
@@ -271,12 +276,10 @@ const blackjackSlice = createSlice({
       .addCase(dealHand.fulfilled, (state, action) => {
         state.loading = false;
         const hand = action.payload.hand;
-        state.handId = hand.id;
-        state.dealerCards = hand.dealerCards;
+        state.hand = hand;
         state.isDealt = true;
         state.insuranceOffered = hand.insuranceOffered;
-        state.currentSpotId = hand.currentSpotId;
-        action.payload.hand.spots.forEach(dealtSpot => {
+        hand.spots.forEach(dealtSpot => {
           const spotIndex = state.spots.findIndex(spot => spot.spotNumber === dealtSpot.spotNumber);
           if (spotIndex !== -1) {
             state.spots[spotIndex] = {
@@ -287,7 +290,6 @@ const blackjackSlice = createSlice({
           }
         });
 
-        // Set spots with no wager to inactive
         state.spots.forEach(spot => {
           if (spot.wager === 0) {
             spot.active = false;
@@ -299,12 +301,12 @@ const blackjackSlice = createSlice({
         state.error = action.payload as string;
       })
       .addCase(updateSpotInsurance.rejected, (state, action) => {
-        state.error = action.payload as string;      })
+        state.error = action.payload as string;
+      })
       .addCase(playerActions.fulfilled, (state, action) => {
+        state.loading = false;
         const spot = action.payload.spot;
-        const hand = spot.hand;
-        state.currentSpotId = hand.currentSpotId;
-        state.dealerCards = hand.dealerCards
+        state.hand = spot.hand;
         const spotIndex = state.spots.findIndex(s => s.id === spot.id);
         if (spotIndex !== -1) {
           state.spots[spotIndex] = {
@@ -338,8 +340,7 @@ const blackjackSlice = createSlice({
         state.loading = false;
         state.insuranceOffered = false;
         const hand = action.payload.hand;
-        state.dealerCards = hand.dealerCards;
-        state.currentSpotId = hand.currentSpotId;
+        state.hand = hand;
         state.spots = state.spots.map(spot => {
           const updatedSpot = hand.spots.find(s => s.id === spot.id);
           return updatedSpot ? { ...spot, ...updatedSpot } : spot;
@@ -354,7 +355,10 @@ const blackjackSlice = createSlice({
       .addCase(checkAndTriggerDealerActions.fulfilled, (state, action) => {
         state.loading = false;
         const hand = action.payload.hand;
-        state.dealerCards = hand.dealerCards;
+        state.hand = hand;
+        state.discardedCards = hand.shoe.discardedCards;
+        state.shuffle = hand.shoe.shuffle;
+        state.session = { ...state.session, ...hand.session };
         state.spots = state.spots.map(spot => {
           const updatedSpot = hand.spots.find(s => s.id === spot.id);
           return updatedSpot ? { ...spot, ...updatedSpot } : spot;
@@ -367,8 +371,8 @@ const blackjackSlice = createSlice({
 });
 
 export const { updateSpotByNumber, updateSpotById, clearTable, setSession, 
-               updateDiscards, updateSelectedChipValue,
+               checkForBust, updateSelectedChipValue,
                updateBetAllSpots, updateGroupInsurance,
-               insureSpots, clearBet } = blackjackSlice.actions;
+               insureSpots, clearBet, clearShuffle } = blackjackSlice.actions;
 
 export default blackjackSlice.reducer;

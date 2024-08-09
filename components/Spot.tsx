@@ -1,16 +1,31 @@
-// components/Spot.tsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { updateSpotByNumber, clearBet, updateSpotInsurance, 
          playerActions, checkAndTriggerIntermediateActions,
-         checkAndTriggerDealerActions } from '../lib/slices/blackjackSlice';
+         checkAndTriggerDealerActions, checkForBust, clearTable } from '../lib/slices/blackjackSlice';
 import { SpotProps } from '../types/Spot';
 import Card from './Card';
 import BettingChip from './BettingChip';
+import { conditionalActionWithDelay, delayedConditionalAction } from '../lib/store';
 
 const Spot: React.FC<SpotProps> = ({ spot, isActive }) => {
   const dispatch = useDispatch();
-  const { selectedChipValue, isDealt, insuranceOffered, groupInsurance } = useSelector((state: RootState) => state.blackjack);
+  const { selectedChipValue, isDealt, insuranceOffered, 
+          groupInsurance, currentSpotId } = useSelector((state: RootState) => state.blackjack);
+  
+  const [lastActionTimestamp, setLastActionTimestamp] = useState<number | null>(null);
+
+  useEffect(() => {
+    let bustCheckTimer: NodeJS.Timeout;
+    if (lastActionTimestamp && spot.isBust) {
+      bustCheckTimer = setTimeout(() => {
+        dispatch(checkForBust(spot.id));
+      }, 3000);
+    }
+    return () => {
+      if (bustCheckTimer) clearTimeout(bustCheckTimer);
+    };
+  }, [lastActionTimestamp, spot.isBust, spot.id, dispatch]);
 
   const handleBetClick = () => {
     dispatch(updateSpotByNumber({ 
@@ -23,26 +38,36 @@ const Spot: React.FC<SpotProps> = ({ spot, isActive }) => {
     dispatch(clearBet(spot.spotNumber));
   };
 
-  const handleInsurance = (insurance: boolean) => {
-    dispatch(updateSpotInsurance({ spotId: spot.id, insurance })).then(() => {
-      dispatch(checkAndTriggerIntermediateActions());
-    });
+  const handleInsurance = async (insurance: boolean) => {
+    try {
+      await dispatch(updateSpotInsurance({ spotId: spot.id, insurance }));
+      await dispatch(checkAndTriggerIntermediateActions());
+      
+      await dispatch(conditionalActionWithDelay(
+        () => checkAndTriggerDealerActions(),
+        () => clearTable(),
+        (state) => !state.blackjack.hand?.currentSpotId,
+        5000
+      ));
+    } catch (error) {
+      console.error('Error in Spot handleInsurance:', error);
+    }
   };
 
-  const handleAction = (action: 'hit' | 'stand' | 'double') => {
-    dispatch(playerActions({ spotId: spot.id, action })).then(() => {
-      dispatch(checkAndTriggerDealerActions());
-    });
+  const handleAction = async (action: 'hit' | 'stand' | 'double') => {
+    await dispatch(playerActions({ spotId: spot.id, action }));
+    setLastActionTimestamp(Date.now());
+
+    dispatch(conditionalActionWithDelay(
+      () => checkAndTriggerDealerActions(),
+      () => clearTable(),
+      (state) => !state.blackjack.hand?.currentSpotId,
+      5000
+    ));
   };
 
-  const deactivateSpot = (spotIndex: number) => {
-    //prob change to the update by ID once we start using this
-    dispatch(updateSpotByNumber({ spotNumber, changes: { active: false } }));
-    handleDiscard(spot.playerCards.length);
-  };
-
-  const getResultDisplay = (result: Spot['result']): string => {
-    switch (result) {
+  const getResultDisplay = () => {
+    switch (spot.result) {
       case 'win': return 'WIN';
       case 'loss': return 'LOSS';
       case 'push': return 'PUSH';
@@ -52,26 +77,26 @@ const Spot: React.FC<SpotProps> = ({ spot, isActive }) => {
     }
   };
 
-const renderCards = () => {
-  const cardRows = [];
-  for (let i = 0; i < spot.playerCards.length; i += 3) {
-    cardRows.unshift(spot.playerCards.slice(i, i + 3));
-  }
+  const renderCards = () => {
+    const cardRows = [];
+    for (let i = 0; i < spot.playerCards.length; i += 3) {
+      cardRows.unshift(spot.playerCards.slice(i, i + 3));
+    }
 
-  return (
-    <div className="absolute left-1/2 transform -translate-x-1/2" style={{ bottom: '165px' }}>
-      {cardRows.map((row, rowIndex) => (
-        <div key={rowIndex} className="flex justify-center mb-1">
-          {row.map((card, index) => (
-            <div key={index} className="mx-1">
-              <Card value={card[0]} suit={card[1]} />
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-};
+    return (
+      <div className="absolute left-1/2 transform -translate-x-1/2" style={{ bottom: '165px' }}>
+        {cardRows.map((row, rowIndex) => (
+          <div key={rowIndex} className="flex justify-center mb-1">
+            {row.map((card, index) => (
+              <div key={index} className="mx-1">
+                <Card value={card[0]} suit={card[1]} />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className={`relative w-48 h-96 bg-green-700 rounded-lg p-2 ${isActive ? 'border-2 border-yellow-400' : ''}`}>
@@ -84,8 +109,34 @@ const renderCards = () => {
         onClick={!isDealt ? handleBetClick : undefined}
       >
         <div className="w-16 h-16">
-          <BettingChip amount={spot.wager} />
+          {spot.result !== 'loss' && (
+            <BettingChip amount={spot.wager} />
+          )}
         </div>
+
+        {spot.double && spot.result !== 'loss' && (
+          <div className="absolute right-full w-16 h-16" style={{ marginRight: '-9px' }}>
+            <BettingChip amount={spot.wager} />
+          </div>
+        )}
+
+        {spot.result === 'win' && (
+          <div className="absolute bottom-full w-16 h-16" style={{ marginBottom: '-8px' }}>
+            <BettingChip amount={spot.wager} />
+          </div>
+        )}
+
+        {spot.result === 'bj' && (
+          <div className="absolute bottom-full w-16 h-16" style={{ marginBottom: '-8px' }}>
+            <BettingChip amount={spot.profit} />
+          </div>
+        )}
+
+        {spot.double && spot.result === 'win' && (
+          <div className="absolute right-full bottom-full w-16 h-16" style={{ marginRight: '-9px', marginBottom: '-8px' }}>
+            <BettingChip amount={spot.wager} />
+          </div>
+        )}
       </div>
 
       {/* Clear button */}
@@ -111,7 +162,7 @@ const renderCards = () => {
                     Double
                   </button>
                 )}
-                {spot.splitOffered && spot.playerCards.length == 2 && (
+                {spot.splitOffered && (
                   <button
                     onClick={() => handleAction('split')}
                     className="bg-yellow-500 text-white px-2 py-1 rounded hover:bg-green-600"
@@ -139,7 +190,6 @@ const renderCards = () => {
         </div>
       )}
 
-      {/* Insurance options */}
       {insuranceOffered && !groupInsurance && spot.active && spot.wager > 0 && spot.insurance === null && (
         <div className="flex justify-center gap-1">
           <button
@@ -157,19 +207,14 @@ const renderCards = () => {
         </div>
       )}
 
-      {/* Result display */}
-      {spot.result && (
-        <div className="absolute top-2 right-2 font-bold">
-          {getResultDisplay(spot.result)}
-        </div>
-      )}
-
-      {/* Insurance result display */}
-      {spot.insuranceResult && (
-        <div className="absolute bottom-24 right-2 text-sm">
-          Insurance: {spot.insuranceResult === 'ins_win' ? 'WIN' : 'LOSS'}
-        </div>
-      )}
+      <div className="absolute top-2 right-2 font-bold">
+        {spot.result && (
+          <div>{getResultDisplay()}</div>  
+        )} 
+        {spot.insuranceResult && (
+          <p>Insurance {spot.insuranceResult === 'ins_win' ? 'WIN' : 'LOSS'}</p>
+        )}
+      </div>
     </div>
   );
 };

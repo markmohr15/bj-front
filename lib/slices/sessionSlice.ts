@@ -1,70 +1,7 @@
-// lib/slices/sessionSlice.ts
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { client } from '../apolloClient';
-import { gql } from '@apollo/client';
-
-const FETCH_LAST_TEN_SESSIONS = gql`
-  query FetchLastTenSessions {
-    lastTenSessions {
-      id
-      startTime
-      endTime
-      handsPlayed
-      profitCents
-      decks
-      numSpots
-      penetration
-      sixFive
-      stand17
-    }
-  }
-`;
-
-const FETCH_ACTIVE_SESSION = gql`
-  query FetchActiveSession {
-    activeSession {
-      id
-      startTime
-      endTime
-      handsPlayed
-      profitCents
-      decks
-      numSpots
-      penetration
-      sixFive
-      stand17
-    }
-  }
-`;
-
-export const CREATE_SESSION = gql`
-  mutation CreateSession($input: CreateSessionInput!) {
-    createSession(input: $input) {
-      session {
-        id
-        startTime
-        decks
-        numSpots
-        penetration
-        sixFive
-        stand17
-      }
-      errors
-    }
-  }
-`;
-
-export const END_SESSION = gql`
-  mutation EndSession($id: ID!) {
-    endSession(input: { id: $input}) {
-      session {
-        id
-        endTime
-      }
-      errors
-    }
-  }
-`;
+import { FETCH_LAST_TEN_SESSIONS, FETCH_ACTIVE_SESSION, CREATE_SESSION, 
+         CONTINUE_SESSION, END_SESSION } from '../mutations/session';
 
 export interface CreateSessionInput {
   decks: number;
@@ -114,15 +51,6 @@ export const endSession = createAsyncThunk(
     }
   }
 );
-
-const CONTINUE_SESSION = gql`
-  mutation ContinueSession($sessionId: ID!) {
-    continueSession(sessionId: $sessionId) {
-      id
-      startTime
-    }
-  }
-`;
 
 export const fetchLastTenSessions = createAsyncThunk(
   'session/fetchLastTenSessions',

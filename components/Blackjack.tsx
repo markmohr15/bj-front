@@ -1,4 +1,3 @@
-// components/Blackjack.tsx
 import React, { useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import Shoe from './Shoe';
@@ -10,10 +9,10 @@ import BetAllCheckbox from './BetAllCheckbox';
 import DiscardTray from './DiscardTray';
 import { Session } from '../types/Session';
 import { Spot as SpotType } from '../types/Spot';
-import { updateSpotByNumber, clearTable, setSession, updateDiscards, 
-         dealHand, checkAndTriggerDealerActions } from '../lib/slices/blackjackSlice';
+import { clearTable, setSession, dealHand, 
+         checkAndTriggerDealerActions } from '../lib/slices/blackjackSlice';
 import { endSession } from '../lib/slices/sessionSlice';
-import { RootState } from '../lib/store';
+import { conditionalActionWithDelay } from '../lib/store';
 
 
 interface BlackjackProps {
@@ -23,9 +22,8 @@ interface BlackjackProps {
 const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
   const dispatch = useDispatch();
 
-  const { session, spots, dealerCards, isDealt, insuranceOffered,
-          groupInsurance, currentSpotId, discardedCards, handId,
-          loading, error } = useSelector((state: RootState) => state.blackjack);
+  const { session, spots, hand, isDealt, insuranceOffered,
+          groupInsurance, discardedCards, shuffle, loading, error } = useSelector((state: RootState) => state.blackjack);
   const reversedSpots = [...spots].reverse();
 
   useEffect(() => {
@@ -39,7 +37,12 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
       dispatch(
         dealHand({ sessionId: session.id, spots: spots.map(({ spotNumber, wager }) => ({ spotNumber, wager }))})
       ).then(() => {
-        dispatch(checkAndTriggerDealerActions());
+          dispatch(conditionalActionWithDelay(
+            () => checkAndTriggerDealerActions(),
+            () => clearTable(),
+            (state) => !state.blackjack.hand?.currentSpotId,
+            5000
+          ));
       });
     };
   }
@@ -49,14 +52,6 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
       .unwrap()
       .then(() => setShowNewSessionModal(true))
       .catch((error) => console.error('Failed to end session:', error));
-  };
-
-  const endHand = () => {
-    const activeSpots = spots.filter(spot => spot.active);
-    const activeCardCount = activeSpots.reduce((sum, spot) => sum + spot.playerCards.length, 0);
-    dispatch(updateDiscards(activeCardCount + dealerCards.length));
-    dispatch(clearTable());
-    // guessing this gets moved elsewhere since it should happen auto
   };
 
   const getSpotPosition = (index: number, total: number) => {
@@ -80,15 +75,38 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
 
   if (!session) return null;
 
+  const renderDealerCards = () => {
+    const cardRows = [];
+    const cards = hand.dealerCards.length === 1 ? [...hand.dealerCards, ""] : [...hand.dealerCards];
+    for (let i = 0; i < cards.length; i += 3) {
+      cardRows.push(cards.slice(i, i + 3));
+    }
+    return (
+      <div className="absolute left-[50%] transform -translate-x-1/2" style={{ top: '95px', marginLeft: '-10px' }}>
+        {cardRows.map((row, rowIndex) => (
+          <div key={rowIndex} className="flex justify-center mb-1">
+            {row.map((card, index) => (
+              <div key={index} className="mx-1">
+                {card != "" ?
+                  <Card value={card[0]} suit={card[1]} /> :
+                  <Card hidden/>
+                }
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col h-screen bg-green-800 overflow-hidden">
       <div className="flex justify-between items-start p-4 h-1/4">
-        {/* Session metrics */}
         <div className="w-1/4 text-white">
           <h3 className="text-lg font-bold mb-2">Session Info</h3>
-          <p>Hands played: {/* Add hands played count */}</p>
-          <p>Total profit: ${currentSpotId}</p>
-          {/* Add more metrics as needed */}
+          <p>Total profit: ${session.profit}</p>
+          <p>Shoes played: {session.shoeCount}</p>
+          <p>Hands played: {session.handCount}</p>
         </div>
 
         <div className="flex justify-center items-start space-x-4 w-1/2">
@@ -97,14 +115,9 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
             discardedPercentage={discardedCards / (52 * session.decks)}
           />
           <div className="w-64 h-32 bg-green-700 flex justify-center items-center">
-            {dealerCards.map((card, index) => (
-              <Card key={index} 
-                    value={card[0]}
-                    suit={card[1]} 
-              />
-            ))}
-            {dealerCards.length == 1 && (
-              <Card key={1} hidden/>
+            {hand.dealerCards && renderDealerCards()}
+            {hand.dealerCards.length == 0 && shuffle && (
+              <p>Shuffling....</p>
             )}
           </div>
           <Shoe />
@@ -122,7 +135,6 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
         </div>
       </div>
 
-      {/* Middle section for player spots and deal button */}
       <div className="flex-grow flex flex-col justify-center items-center">
         {/* Player spots */}
         <div className="flex justify-center w-full mb-8">
@@ -136,26 +148,29 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
               >
                 <Spot
                   spot={spot}
-                  isActive={currentSpotId && spot.id === currentSpotId}
+                  isActive={hand.currentSpotId && spot.id === hand.currentSpotId}
                 />
               </div>
             );
           })}
         </div>
 
-        {/* Deal button */}
-        {canDeal && !isDealt && (
-          <button
-            className=" bg-yellow-500 text-black font-bold py-2 px-4 rounded"
-            onClick={handleDeal}
-          >
-            Deal
-          </button>
-        )}
-
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+        <div className="absolute top-[40%] left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+          {canDeal && !isDealt && (
+            <button
+              className=" bg-yellow-500 text-black font-bold py-2 px-4 rounded"
+              onClick={handleDeal}
+            >
+              Deal
+            </button>
+          )}
+        
           {isDealt && insuranceOffered && groupInsurance && (
             <GroupInsurance/>
+          )}
+
+          {isDealt && insuranceOffered && !groupInsurance && (
+            <p>INSURANCE?</p>
           )}
         </div>
       </div>
