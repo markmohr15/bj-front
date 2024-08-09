@@ -136,7 +136,6 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
       </div>
 
       <div className="flex-grow flex flex-col justify-center items-center">
-        {/* Player spots */}
         <div className="flex justify-center w-full mb-8">
           {reversedSpots.map((spot, index) => {
             const position = getSpotPosition(index, spots.length);
@@ -175,7 +174,6 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
         </div>
       </div>
 
-      {/* Bottom section for chip rack and bet all checkbox */}
       <div className="h-1/6 flex justify-end items-end p-4">
         {!isDealt && (
           <div className="flex items-end">
@@ -185,7 +183,6 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
         )}
       </div>
 
-      {/* Error message */}
       {error && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-4 py-2 rounded">
           {error}

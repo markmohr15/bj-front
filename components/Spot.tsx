@@ -100,22 +100,20 @@ const Spot: React.FC<SpotProps> = ({ spot, isActive }) => {
 
   return (
     <div className={`relative w-48 h-96 bg-green-700 rounded-lg p-2 ${isActive ? 'border-2 border-yellow-400' : ''}`}>
-      {/* Player's cards */}
         {spot.active && renderCards()}
 
-      {/* Betting circle and chip */}
       <div 
-        className={`absolute bottom-2 left-1/2 transform -translate-x-1/2 w-20 h-20 bg-white rounded-full flex items-center justify-center ${isDealt ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+        className={`absolute bottom-2 left-1/2 transform -translate-x-1/2 w-20 h-20 bg-white rounded-full flex items-center justify-center ${isDealt ? 'cursor-not-allowed' : 'cursor-pointer'}`}
         onClick={!isDealt ? handleBetClick : undefined}
       >
         <div className="w-16 h-16">
-          {spot.result !== 'loss' && (
+          {spot.result !== 'loss' && (!isDealt || spot.wager > 0) && (
             <BettingChip amount={spot.wager} />
           )}
         </div>
 
         {spot.double && spot.result !== 'loss' && (
-          <div className="absolute right-full w-16 h-16" style={{ marginRight: '-9px' }}>
+          <div className="absolute right-full w-16 h-16" style={{ marginRight: '-8px' }}>
             <BettingChip amount={spot.wager} />
           </div>
         )}
@@ -133,13 +131,12 @@ const Spot: React.FC<SpotProps> = ({ spot, isActive }) => {
         )}
 
         {spot.double && spot.result === 'win' && (
-          <div className="absolute right-full bottom-full w-16 h-16" style={{ marginRight: '-9px', marginBottom: '-8px' }}>
+          <div className="absolute right-full bottom-full w-16 h-16" style={{ marginRight: '-8px', marginBottom: '-8px' }}>
             <BettingChip amount={spot.wager} />
           </div>
         )}
       </div>
 
-      {/* Clear button */}
       {!isDealt && spot.wager > 0 && (
         <button
           className="absolute bottom-1 left-1 bg-red-500 text-white px-2 py-1 rounded text-xs"
