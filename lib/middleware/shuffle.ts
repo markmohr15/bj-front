@@ -4,7 +4,7 @@ export const shuffleMiddleware = store => next => action => {
   if (checkAndTriggerDealerActions.fulfilled.match(action) && action.payload.hand.shoe.shuffle) {
     setTimeout(() => {
       store.dispatch(clearShuffle());
-    }, 6000);
+    }, 9000);
   }
   return next(action);
 };

@@ -11,12 +11,16 @@ interface BlackjackState {
   spots: Spot[];
   hand: Hand | null;
   isDealt: boolean;
+  dealAnimationComplete: boolean;
+  dealerAnimationComplete: boolean;
   insuranceOffered: boolean;
   groupInsurance: boolean;
   betAllSpots: boolean;
   selectedChipValue: number | null;
   discardedCards: number;
-  shuffling: boolean;
+  shuffle: boolean;
+  cardsToAnimate: CardToAnimate[];
+  currentAnimatingCard: CardToAnimate | null;
   loading: boolean;
   error: string | null;
 }
@@ -26,24 +30,28 @@ const initialState: BlackjackState = {
   spots: [],
   hand: null,
   isDealt: false,
+  dealAnimationComplete: false,
+  dealerAnimationComplete: true,
   insuranceOffered: false,
   groupInsurance: true,
   betAllSpots: false,
   selectedChipValue: null,
   discardedCards: 0,
-  shuffling: false,
+  shuffle: false,
+  cardsToAnimate: [],
+  currentAnimatingCard: null,
   loading: false,
   error: null,
 };
 
-interface InsureSpotPayload {
-  spotId: string;
-  insure: boolean;
-}
-
 interface SpotInput {
   spotNumber: number;
   wager: number;
+}
+
+interface CardToAnimate {
+  card: string;
+  spotNumber: number | null;
 }
 
 export const dealHand = createAsyncThunk(
@@ -54,14 +62,13 @@ export const dealHand = createAsyncThunk(
         mutation: DEAL_HAND,
         variables: { sessionId, spots },
       });
-
       if (data.dealHand.success) {
         return data.dealHand;
       } else {
         return rejectWithValue(data.dealHand.error);
       }
     } catch (error) {
-      return rejectWithValue('An error occurred while dealing the hand');
+      return rejectWithValue('An error occurred while dealing the hand: ' + error);
     }
   }
 );
@@ -179,7 +186,10 @@ export const checkAndTriggerDealerActions = createAsyncThunk(
         mutation: DEALER_ACTIONS,
         variables: { handId }
       });
-      return data.dealerActions;
+      return {
+        ...data.dealerActions,
+        dealerCardsToAnimate: data.dealerActions.hand.dealerCards.slice(2)
+      };
     } catch (error) {
       console.error('Error in dealer actions', error);
       return rejectWithValue(error.message);
@@ -192,7 +202,8 @@ const blackjackSlice = createSlice({
   initialState,
   reducers: {
     setSession: (state, action: PayloadAction<Session>) => {
-      state.session = action.payload;
+      const session = action.payload;
+      state.session = session;
       state.spots = Array(action.payload.numSpots).fill(null).map((_, index) => ({
         id: null,
         sessionId: action.payload.id,
@@ -207,8 +218,28 @@ const blackjackSlice = createSlice({
         profit: null,
         active: true,
       }));
-      state.shuffle = false;
+      state.discardedCards = session.activeShoe.discardedCards;
+      state.shuffle = session.activeShoe.shuffle;
       state.hand = {id: null, dealerCards: [], currentSpotId: null};
+    },
+    setNextAnimatingCard: (state, action: PayloadAction<CardToAnimate>) => {
+      state.currentAnimatingCard = action.payload;
+    },
+    completeCardAnimation: (state) => {
+      if (state.currentAnimatingCard) {
+        const { card, spotNumber } = state.currentAnimatingCard;
+        if (spotNumber === null && card !== "") {
+          state.hand.dealerCards.push(card);
+        } else if (card === "") {
+          state.dealAnimationComplete = true;
+        } else {
+          const spot = state.spots.find(s => s.spotNumber === spotNumber);
+          if (spot) {
+            spot.playerCards.push(card);
+          }
+        }
+        state.currentAnimatingCard = null;
+      }
     },
     updateSpotByNumber: (state, action: PayloadAction<{ spotNumber: number; changes: Partial<Spot> }>) => {
       const { spotNumber, changes } = action.payload;
@@ -239,17 +270,18 @@ const blackjackSlice = createSlice({
       }
     },
     clearTable: (state) => {
-      state.spots = state.spots.map(spot => ({ ...spot, id: null, wager: 0, playerCards: [], 
+      state.spots = state.spots.map(spot => ({ ...spot, id: null, wager: 0, playerCards: [],
                                               splitOffered: null, isBlackjack: null, isBust: null,
                                               insurance: null, double: null, split: null, result: null,
                                               profit: null, active: true, insuranceResult: null }));
       state.hand = {id: null, dealerCards: [], currentSpotId: null};
       state.isDealt = false;
+      state.dealAnimationComplete = false;
       state.insuranceOffered = false;
     },
-    checkForBust: (state, action: PayloadAction<number>) => {
+    handleBustOrBlackjack: (state, action: PayloadAction<number>) => {
       const spotIndex = state.spots.findIndex(spot => spot.id === action.payload);
-      if (spotIndex !== -1 && state.spots[spotIndex].isBust ) {
+      if (spotIndex !== -1 && (state.spots[spotIndex].isBust || state.spots[spotIndex].isBlackjack)) {
         state.discardedCards += state.spots[spotIndex].playerCards.length;
         state.spots[spotIndex].active = false;
       }
@@ -263,6 +295,9 @@ const blackjackSlice = createSlice({
     updateGroupInsurance: (state) => {
       state.groupInsurance = false;
     },
+    updateDealerAnimation: (state, action: PayloadAction<boolean>) => {
+      state.dealerAnimationComplete = action.payload;
+    },
     clearShuffle: (state) => {
       state.shuffle = false;
     },
@@ -275,9 +310,9 @@ const blackjackSlice = createSlice({
       })
       .addCase(dealHand.fulfilled, (state, action) => {
         state.loading = false;
-        const hand = action.payload.hand;
-        state.hand = hand;
         state.isDealt = true;
+        const hand = action.payload.hand;
+        state.hand = {...state.hand, ...hand};
         state.insuranceOffered = hand.insuranceOffered;
         hand.spots.forEach(dealtSpot => {
           const spotIndex = state.spots.findIndex(spot => spot.spotNumber === dealtSpot.spotNumber);
@@ -285,7 +320,7 @@ const blackjackSlice = createSlice({
             state.spots[spotIndex] = {
               ...state.spots[spotIndex],
               ...dealtSpot,
-              insurance: null
+              insurance: null,
             };
           }
         });
@@ -307,13 +342,14 @@ const blackjackSlice = createSlice({
         state.loading = false;
         const spot = action.payload.spot;
         state.hand = spot.hand;
+        const { playerCards, ...newSpot } = spot;
         const spotIndex = state.spots.findIndex(s => s.id === spot.id);
-        if (spotIndex !== -1) {
+        if (spotIndex !== -1) { 
           state.spots[spotIndex] = {
             ...state.spots[spotIndex],
-            ...spot
-          }
-        }
+            ...newSpot
+          };
+        };
       })
       .addCase(playerActions.rejected, (state, action) => {
         state.error = action.payload as string;
@@ -355,7 +391,8 @@ const blackjackSlice = createSlice({
       .addCase(checkAndTriggerDealerActions.fulfilled, (state, action) => {
         state.loading = false;
         const hand = action.payload.hand;
-        state.hand = hand;
+        const { dealerCards, ...newHand } = hand;
+        state.hand = {...newHand, dealerCards: dealerCards.slice(0,2)};
         state.discardedCards = hand.shoe.discardedCards;
         state.shuffle = hand.shoe.shuffle;
         state.session = { ...state.session, ...hand.session };
@@ -371,8 +408,9 @@ const blackjackSlice = createSlice({
 });
 
 export const { updateSpotByNumber, updateSpotById, clearTable, setSession, 
-               checkForBust, updateSelectedChipValue,
+               handleBustOrBlackjack, updateSelectedChipValue,
                updateBetAllSpots, updateGroupInsurance,
-               insureSpots, clearBet, clearShuffle } = blackjackSlice.actions;
+               insureSpots, clearBet, clearShuffle, updateDealerAnimation,
+               setNextAnimatingCard, completeCardAnimation } = blackjackSlice.actions;
 
 export default blackjackSlice.reducer;

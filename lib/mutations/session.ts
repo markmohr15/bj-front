@@ -32,7 +32,12 @@ export const FETCH_ACTIVE_SESSION = gql`
       penetration
       sixFive
       stand17
+      activeShoe {
+        discardedCards
+        shuffle
+      }
     }
+
   }
 `;
 

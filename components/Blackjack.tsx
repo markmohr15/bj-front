@@ -3,27 +3,37 @@ import { useSelector, useDispatch } from 'react-redux';
 import Shoe from './Shoe';
 import Spot from './Spot';
 import Card from './Card';
+import AnimatedCard from './AnimatedCard';
 import GroupInsurance from './GroupInsurance';
 import ChipRack from './ChipRack';
 import BetAllCheckbox from './BetAllCheckbox';
 import DiscardTray from './DiscardTray';
 import { Session } from '../types/Session';
 import { Spot as SpotType } from '../types/Spot';
-import { clearTable, setSession, dealHand, 
-         checkAndTriggerDealerActions } from '../lib/slices/blackjackSlice';
+import { CardToAnimate } from '../types/CardToAnimate';
+import { clearTable, setSession, dealHand, setNextAnimatingCard, 
+         completeCardAnimation, checkAndTriggerDealerActions,
+         handleBustOrBlackjack } from '../lib/slices/blackjackSlice';
 import { endSession } from '../lib/slices/sessionSlice';
-import { conditionalActionWithDelay } from '../lib/store';
-
+import { conditionalActionWithDelay, delay } from '../lib/store';
+import { useCardAnimation } from '../lib/hooks/useCardAnimation';
 
 interface BlackjackProps {
   initialSession: Session;
 }
 
+declare global {
+  interface Window {
+    resolveCardAnimation: (() => void) | null;
+  }
+}
+
 const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
   const dispatch = useDispatch();
-
-  const { session, spots, hand, isDealt, insuranceOffered,
-          groupInsurance, discardedCards, shuffle, loading, error } = useSelector((state: RootState) => state.blackjack);
+  const animateCards = useCardAnimation();
+  const { session, spots, hand, isDealt, insuranceOffered, groupInsurance, 
+          discardedCards, shuffle, currentAnimatingCard, dealAnimationComplete,
+          loading, error } = useSelector((state: RootState) => state.blackjack);
   const reversedSpots = [...spots].reverse();
 
   useEffect(() => {
@@ -32,20 +42,70 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
 
   const canDeal = spots.some(spot => spot.wager > 0);
   
-  const handleDeal = () => {
+  const handleDeal = async () => {
     if (session && canDeal) {
-      dispatch(
-        dealHand({ sessionId: session.id, spots: spots.map(({ spotNumber, wager }) => ({ spotNumber, wager }))})
-      ).then(() => {
-          dispatch(conditionalActionWithDelay(
-            () => checkAndTriggerDealerActions(),
-            () => clearTable(),
-            (state) => !state.blackjack.hand?.currentSpotId,
-            5000
-          ));
-      });
+      try {
+        const dealResult = await dispatch(
+          dealHand({ sessionId: session.id, spots: spots.map(({ spotNumber, wager }) => ({ spotNumber, wager }))})
+        ).unwrap();
+
+        const cardsToAnimate: CardToAnimate[] = dealResult.hand.cardsToAnimate;
+        for (const card of cardsToAnimate) {
+          await animateCards([{
+            card: card.card,
+            spotNumber: card.spotNumber
+          }]);
+        }
+
+        for (const spot of dealResult.hand.spots) {
+          if (spot.isBlackjack && dealResult.hand.currentSpotId) {
+            await delay(3000);
+            dispatch(handleBustOrBlackjack(spot.id));
+          }
+        }
+        
+        dispatch(conditionalActionWithDelay(
+          () => checkAndTriggerDealerActions(),
+          () => clearTable(),
+          (state) => !state.blackjack.hand?.currentSpotId,
+          5000
+        ));
+      } catch (error) {
+        console.error('problem with handleDeal');
+      }
     };
-  }
+  };
+
+  const handleAnimationComplete = () => {
+    dispatch(completeCardAnimation());
+  };
+
+  const getCardStartPosition = () => {
+    const shoeElement = document.getElementById('shoe-position');
+    if (shoeElement) {
+      const rect = shoeElement.getBoundingClientRect();
+      return { x: (rect.left + rect.right) / 2, y: rect.bottom };
+    } else {
+      return {x: 0, y: 0}
+    }
+  };
+
+  const getCardEndPosition = (spotPosition) => {
+    if (spotPosition === null) {
+      const dealerElement = document.getElementById('dealer-position');
+      if (dealerElement) {
+        const rect = dealerElement.getBoundingClientRect();
+        return { x: (rect.left + rect.right) / 2, y: rect.top };
+      }
+    } else {
+      const spotElement = document.getElementById(`spot-${spotPosition}`);
+      if (spotElement) {
+        const rect = spotElement.getBoundingClientRect();
+        return { x: (rect.left + rect.right) / 2, y: rect.top + rect.height / 3 };
+      }
+    }
+    return { x: 0, y: 0 };
+  };
 
   const handleEndSession = () => {
     dispatch(endSession(session.id))
@@ -77,7 +137,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
 
   const renderDealerCards = () => {
     const cardRows = [];
-    const cards = hand.dealerCards.length === 1 ? [...hand.dealerCards, ""] : [...hand.dealerCards];
+    const cards = hand.dealerCards.length === 1 && dealAnimationComplete ? [...hand.dealerCards, ""] : [...hand.dealerCards];
     for (let i = 0; i < cards.length; i += 3) {
       cardRows.push(cards.slice(i, i + 3));
     }
@@ -101,6 +161,14 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
 
   return (
     <div className="flex flex-col h-screen bg-green-800 overflow-hidden">
+      {currentAnimatingCard && (
+        <AnimatedCard
+          card={currentAnimatingCard.card}
+          startPosition={getCardStartPosition()}
+          endPosition={getCardEndPosition(currentAnimatingCard.spotNumber)}
+          onAnimationComplete={handleAnimationComplete}
+        />
+      )}
       <div className="flex justify-between items-start p-4 h-1/4">
         <div className="w-1/4 text-white">
           <h3 className="text-lg font-bold mb-2">Session Info</h3>
@@ -114,9 +182,11 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
             totalDecks={session.decks}
             discardedPercentage={discardedCards / (52 * session.decks)}
           />
-          <div className="w-64 h-32 bg-green-700 flex justify-center items-center">
+          <div className="w-64 h-32 bg-green-700 flex justify-center items-center"
+               id="dealer-position"
+          >
             {hand.dealerCards && renderDealerCards()}
-            {hand.dealerCards.length == 0 && shuffle && (
+            {hand.dealerCards && hand.dealerCards.length == 0 && shuffle && (
               <p>Shuffling....</p>
             )}
           </div>
@@ -147,7 +217,7 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
               >
                 <Spot
                   spot={spot}
-                  isActive={hand.currentSpotId && spot.id === hand.currentSpotId}
+                  isActive={dealAnimationComplete && hand.currentSpotId && spot.id === hand.currentSpotId}
                 />
               </div>
             );
@@ -164,11 +234,11 @@ const Blackjack: React.FC<BlackjackProps> = ({ initialSession }) => {
             </button>
           )}
         
-          {isDealt && insuranceOffered && groupInsurance && (
+          {dealAnimationComplete && insuranceOffered && groupInsurance && (
             <GroupInsurance/>
           )}
 
-          {isDealt && insuranceOffered && !groupInsurance && (
+          {dealAnimationComplete && insuranceOffered && !groupInsurance && (
             <p>INSURANCE?</p>
           )}
         </div>

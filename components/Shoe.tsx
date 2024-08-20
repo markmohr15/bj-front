@@ -29,6 +29,19 @@ const Shoe: React.FC = () => {
       
       {/* Reflective top edge */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-b from-white to-transparent opacity-20"></div>
+
+      {/* Card start position reference point */}
+      <div 
+        id="shoe-position"
+        className="absolute"
+        style={{
+          top: '25%',
+          left: '0',
+          width: '1px',
+          height: '1px',
+          background: 'transparent',
+        }}
+      ></div>
     </div>
   );
 };

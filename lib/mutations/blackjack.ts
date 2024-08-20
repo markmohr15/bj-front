@@ -7,13 +7,15 @@ export const DEAL_HAND = gql`
       errors
       hand {
         id
-        dealerCards
+        cardsToAnimate {
+          card
+          spotNumber
+        }
         insuranceOffered
         currentSpotId
         spots {
           id
           spotNumber
-          playerCards
           splitOffered
           isBlackjack
           result

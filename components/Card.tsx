@@ -1,11 +1,11 @@
 import React from 'react';
 
 interface CardProps {
-  value: string;
+  value: string | null;
   suit: 'H' | 'D' | 'C' | 'S' | null;
 }
 
-const Card: React.FC<CardProps> = ({ value, suit, hidden = false }) => {
+const Card: React.FC<CardProps> = ({ value, suit }) => {
   const suitSymbols = {
     H: '♥',
     D: '♦',
@@ -15,7 +15,7 @@ const Card: React.FC<CardProps> = ({ value, suit, hidden = false }) => {
 
   const suitColor = suit === 'H' || suit === 'D' ? 'text-red-600' : 'text-black';
 
-  if (hidden) {
+  if (!value) {
     return (
       <div className="w-16 h-24 bg-red-600 rounded-lg shadow-md border border-gray-300"></div>
     );
